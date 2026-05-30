@@ -174,11 +174,10 @@ The script `scripts/validate_lerobot_dataset.py` performs two phases of analysis
 2. **Phase 2 (Across-Episode):** Detects expert strategy drift or environment initialization bias over time using chronological bucketing and Kruskal-Wallis tests.
 
 #### Dependencies
-Ensure you have the required dependencies installed:
+All required dependencies are included in the project's `pyproject.toml`. Ensure your environment is up to date by running:
 ```bash
-pip install statsmodels
+uv sync
 ```
-(Other dependencies like `lerobot`, `pandas`, `numpy`, `scipy`, and `tqdm` are typically already in the environment).
 
 #### Usage
 Run the validation script on your dataset:
