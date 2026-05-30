@@ -162,3 +162,36 @@ GR00T LeRobot is a flavor of the standard LeRobot format with more opinionated r
 To support multiple annotations within a single parquet file, users may add extra columns to the parquet file. Users should treat these columns the same way as the `task_index` column in the original LeRobot v2 dataset:
 
 In LeRobot v2, actual language descriptions are stored in a row of the `meta/tasks.jsonl` file, while the parquet file stores only the corresponding index in the `task_index` column. We follow the same convention and store the corresponding index for each annotation in the `annotation.<annotation_source>.<annotation_type>` column. Although the `task_index` column may still be used for the default annotation, a dedicated column `annotation.<annotation_source>.<annotation_type>` is required to ensure it is loadable by our custom data loader.
+
+## Dataset Validation
+
+After converting or preparing your dataset, it is highly recommended to validate its statistical properties to ensure it is suitable for post-training. We provide a comprehensive validation script that performs stationarity and drift analysis.
+
+### Comprehensive Validation Script
+
+The script `scripts/validate_lerobot_dataset.py` performs two phases of analysis:
+1. **Phase 1 (Within-Episode):** Checks for difference-stationarity in action and observation signals to ensure hardware signal smoothness.
+2. **Phase 2 (Across-Episode):** Detects expert strategy drift or environment initialization bias over time using chronological bucketing and Kruskal-Wallis tests.
+
+#### Dependencies
+Ensure you have the required dependencies installed:
+```bash
+pip install statsmodels
+```
+(Other dependencies like `lerobot`, `pandas`, `numpy`, `scipy`, and `tqdm` are typically already in the environment).
+
+#### Usage
+Run the validation script on your dataset:
+```bash
+uv run python scripts/validate_lerobot_dataset.py \
+    --repo-id <YOUR_REPO_ID> \
+    --root <LOCAL_DATA_DIR> \
+    --out-dir ./dataset_validation_results
+```
+
+For a full list of options, run:
+```bash
+uv run python scripts/validate_lerobot_dataset.py --help
+```
+
+The script will generate CSV reports and a summary in the terminal. If significant drift is detected, consider bucketing your dataset or removing episodes that show fatigue or extreme bias.
