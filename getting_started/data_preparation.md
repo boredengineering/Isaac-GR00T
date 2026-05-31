@@ -209,3 +209,44 @@ uv run python scripts/validate_lerobot_dataset.py --help
 ```
 
 The script will generate CSV reports and a summary in the terminal. If significant drift is detected, consider bucketing your dataset or removing episodes that show fatigue or extreme bias.
+
+### Understanding the Validation Output
+
+The output is divided into two phases, each targeting a different aspect of dataset quality.
+
+#### PHASE 1: WITHIN-EPISODE SMOOTHNESS
+This phase evaluates the stability and smoothness of the signals (actions and observations) within each episode. It uses the Augmented Dickey-Fuller (ADF) and Kwiatkowski-Phillips-Schmidt-Shin (KPSS) tests.
+
+| Verdict | Meaning | Hardware Impact |
+| :--- | :--- | :--- |
+| **Stationary** | The signal is stable and mean-reverting. | **Ideal.** Predictable and smooth control. |
+| **Difference Stationary** | The *changes* (deltas) are stable. | **Good.** Indicates smooth velocity/increments. |
+| **Non-Stationary** | The signal drifts unpredictably (e.g., random walk). | **Warning.** May lead to jerky or unstable behavior. |
+| **Trend Stationary** | The signal drifts around a predictable trend. | **Neutral.** Common in reaching tasks. |
+| **Constant** | The signal does not change at all. | **Neutral.** Expected for unused DOF or static objects. |
+
+**What to look for:** Aim for high percentages (>80%) in **Stationary** or **Difference Stationary**. If **Non-Stationary** values are high, your data might have high noise or erratic expert control.
+
+#### PHASE 2: ACROSS-EPISODE DRIFT
+This phase checks if the dataset "drifts" over time (e.g., as the expert gets tired or the environment changes). It groups episodes into chronological "buckets" and compares them.
+
+*   **`init_obs_dim_X`**: Drift in the starting state. A low p-value here means the robot started in significantly different configurations as the collection progressed (e.g., the table was moved).
+*   **`var_action_dim_X`**: Drift in action intensity. This often detects **expert fatigue** (actions becoming "lazier" or smaller over time).
+*   **`trajectory_length`**: Drift in time-to-completion. Detects if the expert became faster (learning effect) or slower (fatigue/difficulty change).
+
+**Interpreting P-Values:**
+*   **p < 0.05**: Significant drift detected. The smaller the p-value (e.g., `1e-21`), the more severe the drift.
+*   **p > 0.05**: No significant drift. The strategy and environment remained consistent.
+
+**Example Case (Unitree G1 Dataset):**
+```text
+⚠️ WARNING: Expert or Environment drift detected in:
+                      metric      p_value
+             init_obs_dim_20 5.382314e-21  <-- Severe Starting Bias
+           trajectory_length 8.414389e-14  <-- Expert became faster/slower
+            var_action_dim_7 2.327256e-04  <-- Strategy changed
+```
+**Actionable Advice:**
+1.  **If `init_obs` drifts:** Your model might overfit to specific starting positions. Collect more diverse data or use stronger data augmentation.
+2.  **If `var_action` drifts:** The "style" of the demonstration changed. You may want to discard the late-stage episodes if the expert was visibly fatigued.
+3.  **If `trajectory_length` drifts:** Tasks became easier or harder over time. Ensure your dataset is balanced across difficulty levels.
