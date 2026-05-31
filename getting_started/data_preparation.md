@@ -174,21 +174,36 @@ The script `scripts/validate_lerobot_dataset.py` performs two phases of analysis
 2. **Phase 2 (Across-Episode):** Detects expert strategy drift or environment initialization bias over time using chronological bucketing and Kruskal-Wallis tests.
 
 #### Dependencies
+
+TODO: create a better pyproject.toml
+
 All required dependencies are included in the project's `pyproject.toml`. Ensure your environment is up to date by running:
+
 ```bash
 uv sync
 ```
 
 #### Usage
+
 Run the validation script on your dataset:
+
 ```bash
-uv run python scripts/validate_lerobot_dataset.py \
-    --repo-id <YOUR_REPO_ID> \
-    --root <LOCAL_DATA_DIR> \
+uv run --isolated \ 
+    --with "lerobot @ git+https://github.com/huggingface/lerobot.git@c75455a6de5c818fa1bb69fb2d92423e86c70475" \ 
+    --with statsmodels \ 
+    --with pandas \ 
+    --with scipy \ 
+    --with tqdm \ 
+    --with matplotlib \ 
+    --with seaborn \ 
+    python scripts/validate_lerobot_dataset.py \ 
+    --repo-id unitreerobotics/G1_Brainco_PickDrink_Dataset \ 
+    --root "./data/G1_Brainco_PickDrink_Dataset_v2" \ 
     --out-dir ./dataset_validation_results
 ```
 
 For a full list of options, run:
+
 ```bash
 uv run python scripts/validate_lerobot_dataset.py --help
 ```
