@@ -240,9 +240,15 @@ def main():
     
     # --- Save and Report Phase 2 ---
     df_metrics = pd.DataFrame(across_ep_metrics)
+    metrics_path = args.out_dir / "episode_metrics.csv"
+    df_metrics.to_csv(metrics_path, index=False)
+    
     df_drift = test_across_episode_drift(df_metrics, num_buckets=args.num_buckets, alpha=args.alpha)
     drift_path = args.out_dir / "across_episode_drift.csv"
     df_drift.to_csv(drift_path, index=False)
+
+    print(f"✅ Saved metrics to {metrics_path}")
+    print(f"✅ Saved drift results to {drift_path}")
 
     print(f"\n{'='*60}")
     print(f"PHASE 2: ACROSS-EPISODE DRIFT (Chronological Buckets: {args.num_buckets})")
