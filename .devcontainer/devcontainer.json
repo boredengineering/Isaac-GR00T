@@ -7,12 +7,16 @@
       "installRStudio": false
     },
     "ghcr.io/devcontainers/features/python:1": {
-      "version": "latest"
+      "version": "latest",
+      "installUv": true
     },
     "ghcr.io/rocker-org/devcontainer-features/quarto-cli:1": {
       "version": "latest"
     },
     "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/git-lfs:1": {
       "version": "latest"
     }
   },
@@ -34,5 +38,5 @@
   },
 
   // Install system dependencies, then Gemini CLI, then R packages, then pip packages
-  "postCreateCommand": "apt update && apt install -y libmagick++-dev libuv1-dev cmake pandoc && npm install -g @google/gemini-cli && echo 'Gemini CLI installed!' && Rscript -e 'install.packages(c(\"languageserver\", \"renv\"), repos=\"https://cloud.r-project.org\")' && if [ -f renv.lock ]; then Rscript -e 'renv::restore()'; fi && pip install jupyter ipykernel"
+  "postCreateCommand": "apt update && apt install -y libmagick++-dev libuv1-dev cmake pandoc build-essential python3-dev && npm install -g @google/gemini-cli && echo 'Gemini CLI installed!' && Rscript -e 'install.packages(c(\"languageserver\", \"renv\"), repos=\"https://cloud.r-project.org\")' && if [ -f renv.lock ]; then Rscript -e 'renv::restore()'; fi && pip install jupyter ipykernel uv"
 }
