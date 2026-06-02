@@ -549,3 +549,34 @@ Support during Early Access is best-effort. We will continue iterating toward a 
 }
 ```
 
+---
+
+## Managing Multiple Environments with uv
+
+To handle diverse tasks (e.g., Core Training vs. Dataset Validation) that may have conflicting dependencies, Isaac-GR00T uses `uv` dependency groups. This allows you to maintain isolated virtual environments.
+
+### 1. Available Groups
+*   **Default:** Core training and inference dependencies.
+*   **`validation`:** Statistical tools (`statsmodels`, `seaborn`) and dataset-specific libraries (`lerobot`) for validating and distilling demonstrations.
+*   **`dev`:** Development tools (`pytest`, `ruff`, `ipython`).
+
+### 2. Synchronization
+You can sync your local `.venv` with specific groups to enable the features you need:
+
+```bash
+# Core only (Default)
+uv sync
+
+# Core + Dataset Validation
+uv sync --extra validation
+
+# Everything (Core + Validation + Dev)
+uv sync --all-extras
+```
+
+### 3. Usage in VS Code
+If you are using the VS Code Jupyter extension, you can run notebooks directly using these environments:
+1.  Run `uv sync --extra validation` in your terminal.
+2.  Open your `.ipynb` file in VS Code.
+3.  Click **"Select Kernel"** (top right) -> **"Python Environments..."** -> Select the `.venv` in the project root.
+

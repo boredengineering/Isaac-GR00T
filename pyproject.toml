@@ -62,6 +62,12 @@ dev = [
     "build",
     "pre-commit",
 ]
+validation = [
+    "statsmodels",
+    "seaborn",
+    "ipykernel",
+    "lerobot @ git+https://github.com/huggingface/lerobot.git@c75455a6de5c818fa1bb69fb2d92423e86c70475",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -71,6 +77,12 @@ include = ["gr00t*"]
 required-environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'linux' and platform_machine == 'aarch64'",
+]
+override-dependencies = [
+    "wandb==0.23.0",
+    "datasets==3.6.0",
+    "av==16.1.0",
+    "numpy==1.26.4",
 ]
 
 [tool.uv.sources]
