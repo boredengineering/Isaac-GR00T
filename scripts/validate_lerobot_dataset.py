@@ -158,7 +158,8 @@ def main():
     parser.add_argument("--alpha", type=float, default=0.05, help="Significance level.")
     parser.add_argument("--min-len", type=int, default=20, help="Minimum episode length.")
     parser.add_argument("--num-buckets", type=int, default=3, help="Number of chronological buckets for drift testing.")
-    parser.add_argument("--out-dir", type=Path, default=Path("./dataset_validation_out"), help="Output directory.")
+    parser.add_argument("--out-dir", type=Path, default=Path("./dataset_validation_results"), help="Base output directory.")
+    parser.add_argument("--run-label", type=str, default="default", help="Unique label for this experimental run.")
     parser.add_argument("--diff-order", type=int, default=1, help="Differencing order (0=raw, 1=velocity, 2=accel).")
     parser.add_argument("--adf-autolag", type=str, default="AIC", help="ADF autolag method.")
     parser.add_argument("--max-lag", type=int, default=None, help="ADF maximum lag.")
@@ -166,7 +167,13 @@ def main():
     
     args = parser.parse_args()
 
+    # Create organized output directory: <out_dir>/<run_label>/run_<timestamp>
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    args.out_dir = args.out_dir / args.run_label / f"run_{timestamp}"
+    
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"✅ Results will be saved to: {args.out_dir}")
     print(f"Loading dataset repo_id={args.repo_id!r} from root={args.root}")
     dataset = LeRobotDataset(repo_id=args.repo_id, root=args.root)
     
