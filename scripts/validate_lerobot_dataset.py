@@ -60,6 +60,22 @@ except ImportError:
     print("Error: 'statsmodels' not found. Please install it with 'pip install statsmodels'.")
     sys.exit(1)
 
+# Import noise detection utilities
+try:
+    from scripts.apply_filters import detect_jitter, detect_staircase
+except ImportError:
+    # Define locally if import fails
+    def detect_jitter(data):
+        if len(data) < 3: return 0.0
+        accel = np.diff(data, n=2)
+        return float(np.std(accel))
+
+    def detect_staircase(data):
+        deltas = np.diff(data)
+        if len(deltas) == 0: return 0.0
+        zero_velocity_count = np.sum(np.abs(deltas) < 1e-6)
+        return float(zero_velocity_count / len(deltas))
+
 
 def classify(adf_p: float, kpss_p: float, alpha: float) -> str:
     """Joint verdict from ADF + KPSS p-values."""
@@ -193,9 +209,12 @@ def main():
             
             for d in range(data_to_test.shape[1]):
                 x_series = data_to_test[:, d]
+                raw_series = raw_matrix[:, d]
                 
-                # Phase 2: Record total variation to check for fatigue/laziness
+                # Phase 2: Record total variation and noise metrics
                 ep_metrics[f"var_{stream_name}_dim_{d}"] = np.sum(np.abs(x_series))
+                ep_metrics[f"jitter_{stream_name}_dim_{d}"] = detect_jitter(raw_series)
+                ep_metrics[f"staircase_{stream_name}_dim_{d}"] = detect_staircase(raw_series)
                 
                 # Phase 1: Stationarity of the signal
                 adf_p = safe_adf(x_series, args.max_lag, args.adf_autolag)
@@ -215,6 +234,8 @@ def main():
                     "adf_p": adf_p,
                     "kpss_p": kpss_p,
                     "verdict": verdict,
+                    "jitter": ep_metrics[f"jitter_{stream_name}_dim_{d}"],
+                    "staircase": ep_metrics[f"staircase_{stream_name}_dim_{d}"]
                 })
                 
         across_ep_metrics.append(ep_metrics)
