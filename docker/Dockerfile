@@ -16,7 +16,7 @@ RUN mkdir -p /opt
 RUN cd /opt && git clone https://github.com/facebookresearch/pytorch3d.git
 RUN cd /opt/pytorch3d && pip install .
 
-COPY src/gr00t/ /workspace/gr00t/
+COPY . /workspace/gr00t/
 RUN cd /workspace/gr00t && uv sync && uv pip install -e .
 
 RUN apt-get update && apt-get install -y libegl1

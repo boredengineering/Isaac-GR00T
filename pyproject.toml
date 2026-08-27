@@ -24,7 +24,7 @@ dependencies = [
     "torchvision==0.22.1",
     "transformers==4.51.3",
     "tyro==0.9.17",
-    "flash-attn==2.7.4.post1",
+    "flash-attn==2.8.0.post2",
     "click==8.1.8",
     "datasets==3.6.0",
     "einops==0.8.1",
@@ -53,8 +53,22 @@ tensorrt = [
 where = ["."]
 include = ["gr00t*"]
 
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+default = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+
 [tool.uv.extra-build-dependencies]
-flash-attn = ["torch==2.7.0", "numpy==1.26.4"]
+flash-attn = ["torch==2.7.1", "numpy==1.26.4"]
 
 [tool.ruff]
 line-length = 100
