@@ -244,6 +244,7 @@ class Gr00tN1d7Processor(BaseProcessor):
         # Normalization
         use_mean_std: bool = False,
         letter_box_transform: bool = False,
+        emit_geometry_images: bool = False,
     ):
         self.modality_configs = parse_modality_configs(modality_configs)
 
@@ -270,6 +271,13 @@ class Gr00tN1d7Processor(BaseProcessor):
         self.state_dropout_prob = state_dropout_prob
 
         self.letter_box_transform = letter_box_transform
+        self.emit_geometry_images = emit_geometry_images
+        """Also emit the untokenized uint8 image stack, for geometry conditioning.
+
+        Off by default: the geometry encoder needs the images before Qwen's patch flattening,
+        and carrying them for runs that do not use geometry conditioning would cost memory and
+        change the batch keys for every other caller.
+        """
 
         # Save VLM settings
         self.formalize_language = formalize_language
@@ -749,6 +757,12 @@ class Gr00tN1d7Processor(BaseProcessor):
         ).flatten(0, 1)  # (T*V, C, H, W)
 
         vlm_inputs = self._apply_vlm_processing(stacked_images, language)
+        if self.emit_geometry_images:
+            # Carried inside the returned mapping rather than as a second return value: this method
+            # is called directly by existing tests, and widening its signature would break them.
+            # Untokenized and pre-normalization, but post geometric augmentation, so the geometry
+            # features line up with the crop the backbone actually sees.
+            vlm_inputs["geometry_images"] = stacked_images
         return vlm_inputs
 
     def save_pretrained(self, save_directory: str | Path) -> list[Path]:
@@ -877,6 +891,9 @@ class Gr00tN1d7Processor(BaseProcessor):
                 "max_action_horizon",
                 "max_state_dim",
                 "max_action_dim",
+                # Without this entry the flag is silently dropped here and geometry conditioning
+                # trains as a no-op that looks healthy.
+                "emit_geometry_images",
             ]
             for key in override_keys:
                 if key in kwargs:

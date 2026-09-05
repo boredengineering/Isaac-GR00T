@@ -58,6 +58,43 @@ class FinetuneConfig:
     tune_diffusion_model: bool = True
     """If True, fine-tune the diffusion-based action decoder (if present in the model)."""
 
+    geometry_mode: str = "off"
+    """Geometry conditioning: ``off``, ``align`` (Spatial Forcing) or ``mix`` (3D-Mix).
+
+    ``align`` supervises the backbone's image tokens against frozen geometry features and costs
+    nothing at inference. ``mix`` gates those features onto the conditioning and runs the geometry
+    encoder at inference too.
+    """
+
+    geometry_encoder_id: str = "depth-anything/Depth-Anything-V2-Small-hf"
+    """Frozen geometry encoder. Depth-Anything-V2-Small is Apache-2.0."""
+
+    geometry_align_loss_coeff: float = 0.5
+    """Weight on the alignment loss when ``geometry_mode`` is ``align``.
+
+    **Not a published value.** Spatial Forcing never states its weight factor, so this default is a
+    guess kept only so a run starts. Sweep it rather than citing it.
+    """
+
+    geometry_align_position_embedding_std: float = 0.02
+    """Initialisation scale of the target positional embedding when ``geometry_mode`` is ``align``.
+
+    **Provisional, and measured to be weak.** Spatial Forcing credits this embedding with ten points
+    on LIBERO-Long but publishes no scale. Against ``DA3METRIC-LARGE``'s layer-23 patch tokens
+    (per-channel std 0.718 on a real ego_view frame) a std of 0.02 is 2.8% of the target's own
+    scale, so the term starts weak and has to be learned up. Sweep it.
+    """
+
+    geometry_align_site: str = "post_vl_self_attention"
+    """Alignment site when ``geometry_mode`` is ``align``.
+
+    One of ``post_vl_self_attention`` (deepest reachable), ``backbone_output`` (the truncation
+    point), or ``backbone_layer_<k>``.
+    """
+
+    geometry_mix_tokens_as: str = "image"
+    """Cross-attention branch the fused tokens join when ``geometry_mode`` is ``mix``."""
+
     state_dropout_prob: float = 0.2
     """
     Dropout probability applied to state inputs for regularization during training.

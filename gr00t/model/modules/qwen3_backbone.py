@@ -195,6 +195,8 @@ class Qwen3Backbone(torch.nn.Module):
             self.model.language_model.layers.pop(-1)
 
         self.select_layer = select_layer
+        self.emit_hidden_layers: tuple[int, ...] = ()
+        """Language-model layers to emit alongside the final one. Set via request_hidden_layers()."""
         self.set_trainable_parameters(tune_llm, tune_visual, tune_top_llm_layers)
         if load_bf16 and trainable_params_fp32:
             # cast trainable parameters to fp32
@@ -351,6 +353,24 @@ class Qwen3Backbone(torch.nn.Module):
             )
         return changed
 
+    def request_hidden_layers(self, layers) -> None:
+        """Ask forward() to also emit these language-model hidden states.
+
+        Indices follow ``output_hidden_states``: 0 is the embedding output and ``k`` is the output of
+        layer ``k``, so the deepest available index equals ``select_layer``.
+
+        Args:
+            layers: Iterable of layer indices to emit.
+        """
+        layers = tuple(sorted({int(layer) for layer in layers}))
+        for layer in layers:
+            assert 0 <= layer <= self.select_layer, (
+                f"Layer {layer} is outside this backbone: the language model is truncated at"
+                f" select_layer={self.select_layer}, so deeper layers do not exist and cannot be"
+                " read from a hidden-state tuple."
+            )
+        self.emit_hidden_layers = layers
+
     def prepare_input(self, batch: dict) -> BatchFeature:
         return BatchFeature(data=batch)
 
@@ -360,13 +380,16 @@ class Qwen3Backbone(torch.nn.Module):
         keys_to_use = ["input_ids", "attention_mask", "pixel_values", "image_grid_thw"]
         vl_input = {k: vl_input[k] for k in keys_to_use}
         outputs = self.model(**vl_input, output_hidden_states=True)
-        outputs = outputs.hidden_states[-1]
+        hidden_states = outputs.hidden_states
         image_mask = vl_input["input_ids"] == self.model.config.image_token_id
         attention_mask = vl_input["attention_mask"] == 1
-        return BatchFeature(
-            data={
-                "backbone_features": outputs,
-                "backbone_attention_mask": attention_mask,
-                "image_mask": image_mask,
-            }
-        )  # [B, T2, hidden_size]
+        data = {
+            "backbone_features": hidden_states[-1],
+            "backbone_attention_mask": attention_mask,
+            "image_mask": image_mask,
+        }
+        # Intermediate layers, kept only when a caller asked for them: the whole tuple is one
+        # activation per layer and holding it would multiply the backbone's activation memory.
+        for layer in self.emit_hidden_layers:
+            data[f"backbone_hidden_layer_{layer}"] = hidden_states[layer]
+        return BatchFeature(data=data)  # [B, T2, hidden_size]

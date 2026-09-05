@@ -550,6 +550,151 @@ class Gr00tN1d7(PreTrainedModel):
             transformers_loading_kwargs=transformers_loading_kwargs,
         )
 
+        # Geometry conditioning. Built only when enabled so that ``off`` adds no parameters, keeps
+        # the checkpoint shape unchanged, and therefore still loads under strict weight loading.
+        self.geometry_encoder = None
+        self.geometry_conditioning = None
+        if getattr(config, "geometry_mode", "off") != "off":
+            from gr00t.model.modules.geometry_conditioning import (
+                FrozenGeometryEncoder,
+                GeometryConditioning,
+                GeometryConditioningConfig,
+            )
+
+            geometry_config = GeometryConditioningConfig(
+                mode=config.geometry_mode,
+                encoder_id=config.geometry_encoder_id,
+                align_loss_coeff=config.geometry_align_loss_coeff,
+                align_position_embedding_std=config.geometry_align_position_embedding_std,
+                mix_tokens_as=config.geometry_mix_tokens_as,
+            )
+            self.geometry_encoder = FrozenGeometryEncoder(geometry_config)
+            # Measured with one probe forward rather than read from a per-encoder table: VGGT's
+            # aggregated tokens are twice its configured width, so any table is a trap for the next
+            # encoder that does something similar.
+            self.geometry_conditioning = GeometryConditioning(
+                geometry_config,
+                backbone_dim=config.backbone_embedding_dim,
+                geometry_dim=self.geometry_encoder.probe_feature_dim(),
+            )
+            if config.geometry_mode == "align":
+                layer = self._align_backbone_layer()
+                if layer is not None:
+                    self.backbone.request_hidden_layers([layer])
+
+    def _geometry_features(self, backbone_inputs, backbone_outputs) -> torch.Tensor | None:
+        """Encode the untokenized images into per-image-token geometry features.
+
+        The token grid is derived from the batch rather than recomputed from the patch and merge
+        sizes, so a change to the image resolution cannot silently misalign the two grids.
+
+        Args:
+            backbone_inputs: Backbone inputs, carrying ``geometry_images`` when enabled.
+            backbone_outputs: Backbone outputs, carrying ``image_mask``.
+
+        Returns:
+            Features as ``(B, num_image_tokens, geometry_dim)``, or None when disabled or when the
+            untokenized images were not emitted.
+        """
+        if self.geometry_encoder is None:
+            return None
+        images = backbone_inputs.get("geometry_images")
+        assert images is not None, (
+            "geometry_mode is"
+            f" {self.config.geometry_mode!r} but the batch carries no 'geometry_images'. The"
+            " processor emits them only when constructed with emit_geometry_images=True; without"
+            " that, geometry conditioning would silently do nothing and the run would look healthy."
+        )
+
+        from gr00t.model.modules.geometry_conditioning import token_grid_from_image_grid_thw
+
+        batch_size, num_images = images.shape[0], images.shape[1]
+        merge_size = self.backbone.model.config.vision_config.spatial_merge_size
+        rows, columns = token_grid_from_image_grid_thw(
+            backbone_inputs["image_grid_thw"], merge_size
+        )
+
+        features = self.geometry_encoder(images.flatten(0, 1), grid=(rows, columns))
+        return features.reshape(batch_size, num_images * rows * columns, -1)
+
+    def _align_backbone_layer(self) -> int | None:
+        """Return the backbone layer index the alignment site names, or None for other sites."""
+        from gr00t.model.modules.geometry_conditioning import align_backbone_layer_from_site
+
+        return align_backbone_layer_from_site(self.config.geometry_align_site)
+
+    def _align_image_tokens(self, backbone_outputs, backbone_output_features) -> torch.Tensor:
+        """Return the student tokens the alignment loss supervises, as ``(B, N, D)``.
+
+        The site is read from config rather than inherited from call order. That matters because
+        ``Gr00tN1d7ActionHead.process_backbone_output`` replaces ``backbone_features`` in place with
+        the post-``vlln``, post-``vl_self_attention`` features, so *when* this is called silently
+        decides *which depth* is supervised -- a four-layer difference with no signal at the call
+        site.
+
+        Args:
+            backbone_outputs: Backbone outputs, after the action head has processed them.
+            backbone_output_features: ``backbone_features`` as captured before the action head ran.
+
+        Returns:
+            Student tokens as ``(B, N, backbone_dim)``.
+        """
+        from gr00t.model.modules.geometry_conditioning import (
+            ALIGN_SITE_BACKBONE_OUTPUT,
+            ALIGN_SITE_POST_VL_SELF_ATTENTION,
+        )
+
+        site = self.config.geometry_align_site
+        if site == ALIGN_SITE_POST_VL_SELF_ATTENTION:
+            features = backbone_outputs["backbone_features"]
+        elif site == ALIGN_SITE_BACKBONE_OUTPUT:
+            features = backbone_output_features
+        else:
+            layer = self._align_backbone_layer()
+            key = f"backbone_hidden_layer_{layer}"
+            assert key in backbone_outputs, (
+                f"geometry_align_site={site!r} but the backbone did not emit {key!r}. The layer"
+                " must be requested before the forward pass via request_hidden_layers()."
+            )
+            features = backbone_outputs[key]
+        return self._image_tokens_per_sample(features, backbone_outputs["image_mask"])
+
+    @staticmethod
+    def _image_tokens_per_sample(backbone_features, image_mask) -> torch.Tensor:
+        """Return the image tokens as ``(B, N, D)``, preserving each sample's token order.
+
+        Alignment adds a positional embedding to the target and averages per sample, so both need
+        the token axis. Selecting with a boolean mask flattens the batch away, which is why the
+        count is asserted equal across samples before reshaping.
+
+        Args:
+            backbone_features: Backbone output as ``(B, L, D)``.
+            image_mask: Boolean image-token mask as ``(B, L)``.
+
+        Returns:
+            Image tokens as ``(B, N, D)``.
+        """
+        counts = image_mask.sum(dim=1)
+        assert bool((counts == counts[0]).all()), (
+            f"Samples carry different image-token counts ({counts.tolist()}), so they cannot be"
+            " stacked onto one token axis. Geometry features are resampled to a single grid, so a"
+            " ragged batch means the grids disagree."
+        )
+        return backbone_features[image_mask].reshape(backbone_features.shape[0], int(counts[0]), -1)
+
+    def _fuse_geometry(self, backbone_outputs, geometry_features):
+        """Append gated geometry tokens to the backbone conditioning, extending both masks."""
+        features, image_mask, attention_mask = self.geometry_conditioning.fuse(
+            backbone_outputs["backbone_features"],
+            backbone_outputs["image_mask"],
+            backbone_outputs["backbone_attention_mask"],
+            geometry_features,
+        )
+        backbone_outputs["backbone_features"] = features
+        backbone_outputs["image_mask"] = image_mask
+        backbone_outputs["backbone_attention_mask"] = attention_mask
+        return backbone_outputs
+
     def prepare_input(self, inputs: dict) -> Tuple[BatchFeature, BatchFeature]:
         """Prepare inputs for backbone and action head."""
 
@@ -596,7 +741,23 @@ class Gr00tN1d7(PreTrainedModel):
         # Prepare inputs for backbone and action head
         backbone_inputs, action_inputs = self.prepare_input(inputs)
         backbone_outputs = self.backbone(backbone_inputs)
+
+        geometry_features = self._geometry_features(backbone_inputs, backbone_outputs)
+        if geometry_features is not None and self.config.geometry_mode == "mix":
+            backbone_outputs = self._fuse_geometry(backbone_outputs, geometry_features)
+
+        # Held before the action head runs, because process_backbone_output replaces this entry
+        # with its own normalised, self-attended features.
+        backbone_output_features = backbone_outputs["backbone_features"]
         action_outputs = self.action_head(backbone_outputs, action_inputs)
+
+        if geometry_features is not None and self.config.geometry_mode == "align":
+            image_tokens = self._align_image_tokens(backbone_outputs, backbone_output_features)
+            align_loss = self.geometry_conditioning.alignment_loss(image_tokens, geometry_features)
+            action_outputs["align_loss"] = align_loss
+            action_outputs["loss"] = (
+                action_outputs["loss"] + self.config.geometry_align_loss_coeff * align_loss
+            )
 
         return action_outputs
 
@@ -609,6 +770,14 @@ class Gr00tN1d7(PreTrainedModel):
 
         # Forward through backbone
         backbone_outputs = self.backbone(backbone_inputs)
+
+        # ``mix`` consumes geometry as conditioning, so it has to be applied here as well as in
+        # training; ``align`` only shapes the weights and needs nothing at inference.
+        if self.config.geometry_mode == "mix":
+            geometry_features = self._geometry_features(backbone_inputs, backbone_outputs)
+            if geometry_features is not None:
+                backbone_outputs = self._fuse_geometry(backbone_outputs, geometry_features)
+
         action_outputs = self.action_head.get_action(backbone_outputs, action_inputs, options)
 
         return action_outputs

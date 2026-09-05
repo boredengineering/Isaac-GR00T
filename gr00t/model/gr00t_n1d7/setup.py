@@ -87,6 +87,14 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                 tune_diffusion_model=self.config.model.tune_diffusion_model,
                 tune_vlln=self.config.model.tune_vlln,
                 state_dropout_prob=self.config.model.state_dropout_prob,
+                geometry_mode=self.config.model.geometry_mode,
+                geometry_encoder_id=self.config.model.geometry_encoder_id,
+                geometry_align_loss_coeff=self.config.model.geometry_align_loss_coeff,
+                geometry_align_site=self.config.model.geometry_align_site,
+                geometry_align_position_embedding_std=(
+                    self.config.model.geometry_align_position_embedding_std
+                ),
+                geometry_mix_tokens_as=self.config.model.geometry_mix_tokens_as,
                 backbone_trainable_params_fp32=self.config.model.backbone_trainable_params_fp32,
                 load_bf16=self.config.model.load_bf16,
                 transformers_loading_kwargs=self.transformers_loading_kwargs,
@@ -105,7 +113,21 @@ class Gr00tN1d7Pipeline(ModelPipeline):
 
             unexpected_keys = loading_info.get("unexpected_keys", [])
             mismatched_keys = loading_info.get("mismatched_keys", [])
-            other_missing = [k for k in missing_keys if "mask_token" not in k]
+            # Geometry conditioning adds parameters the pretrained checkpoint cannot contain, so
+            # they are expected to be missing and freshly initialised. Everything else missing is
+            # still an error: this allowance is scoped to the module's own names rather than
+            # loosening strict loading in general.
+            geometry_missing = [k for k in missing_keys if "geometry_conditioning" in k]
+            if geometry_missing:
+                logging.info(
+                    "geometry_conditioning parameters not in checkpoint - initialized (%d tensors)",
+                    len(geometry_missing),
+                )
+            other_missing = [
+                k
+                for k in missing_keys
+                if "mask_token" not in k and "geometry_conditioning" not in k
+            ]
             errors = []
             if other_missing:
                 errors.append(f"Missing keys ({len(other_missing)}): {other_missing}")
@@ -180,6 +202,7 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                 exclude_state=self.model_config.exclude_state,
                 state_dropout_prob=self.model_config.state_dropout_prob,
                 use_mean_std=self.model_config.use_mean_std,
+                emit_geometry_images=self.model_config.geometry_mode != "off",
                 **self.transformers_loading_kwargs,
             )
         else:
@@ -187,6 +210,9 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                 modality_configs=self.config.data.modality_configs,
                 use_percentiles=self.model_config.use_percentiles,
                 statistics=self._get_statistics(),  # By default is None, so this will be computed and set later.
+                # Same flag as the pretrained branch; here it lands directly on the constructor
+                # instead of passing through from_pretrained's override allowlist.
+                emit_geometry_images=self.model_config.geometry_mode != "off",
                 embodiment_id_mapping=self._get_embodiment_id_mapping(),  # By default is None, so this will be set later.
                 image_crop_size=self.model_config.image_crop_size,
                 image_target_size=self.model_config.image_target_size,

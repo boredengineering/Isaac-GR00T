@@ -24,7 +24,7 @@ from transformers import PretrainedConfig
 from . import register_model_config
 
 
-@dataclass
+@dataclass(init=False)
 class Gr00tN1d7Config(PretrainedConfig):
     """Unified configuration for Gr00tN1d7 model with backbone and action head.
 
@@ -120,6 +120,50 @@ class Gr00tN1d7Config(PretrainedConfig):
     use_mean_std: bool = False  # Use mean/std normalization instead of min/max
 
     # Multi-embodiment parameters
+    geometry_mode: str = "off"
+    """Geometry conditioning mode: ``off``, ``align`` (Spatial Forcing) or ``mix`` (3D-Mix).
+
+    ``off`` adds no parameters and no compute. ``align`` supervises the backbone's image tokens
+    against frozen geometry features and needs nothing at inference. ``mix`` gates those features
+    onto the conditioning sequence and therefore runs the geometry encoder at inference too.
+    """
+
+    geometry_encoder_id: str = "depth-anything/Depth-Anything-V2-Small-hf"
+    """Frozen geometry encoder. Depth-Anything-V2-Small is Apache-2.0; VGGT's released checkpoint is not."""
+
+    geometry_align_loss_coeff: float = 0.5
+    """Weight on the alignment loss when ``geometry_mode`` is ``align``.
+
+    **Not a published value.** Spatial Forcing never states its weight factor, so this default is a
+    guess kept only so a run starts. Sweep it rather than citing it.
+    """
+
+    geometry_align_position_embedding_std: float = 0.02
+    """Initialisation scale of the target positional embedding when ``geometry_mode`` is ``align``.
+
+    **Provisional, and measured to be weak.** Spatial Forcing credits this embedding with ten points
+    on LIBERO-Long but publishes no scale. Against ``DA3METRIC-LARGE``'s layer-23 patch tokens
+    (per-channel std 0.718 on a real ego_view frame) a std of 0.02 is 2.8% of the target's own
+    scale, so the term starts weak and has to be learned up. Sweep it.
+    """
+
+    geometry_align_site: str = "post_vl_self_attention"
+    """Where in the student the alignment loss is applied when ``geometry_mode`` is ``align``.
+
+    One of ``post_vl_self_attention``, ``backbone_output``, or ``backbone_layer_<k>``.
+
+    Spatial Forcing aligns layer 24 of 32 (0.75 depth) and its layer sweep is non-monotonic, with
+    the half-depth point scoring worst. Every shipped N1.7 checkpoint truncates the 28-layer
+    Cosmos-Reason2-2B language model at ``select_layer=16`` -- 0.57 depth -- and stacks ``vlln`` plus
+    a four-layer self-attention transformer above it inside the action head. So
+    ``post_vl_self_attention`` is the deepest reachable point and the closest analogue to upstream's
+    choice, which is why it is the default; ``backbone_output`` is the raw truncation point, and
+    ``backbone_layer_<k>`` reaches shallower layers for the sweep.
+    """
+
+    geometry_mix_tokens_as: str = "image"
+    """Cross-attention branch the fused tokens join when ``geometry_mode`` is ``mix``."""
+
     max_num_embodiments: int = 32
 
     def __init__(self, **kwargs):

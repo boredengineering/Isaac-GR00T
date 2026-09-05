@@ -80,6 +80,14 @@ if __name__ == "__main__":
     config.model.tune_projector = ft_config.tune_projector
     config.model.tune_diffusion_model = ft_config.tune_diffusion_model
     config.model.state_dropout_prob = ft_config.state_dropout_prob
+    config.model.geometry_mode = ft_config.geometry_mode
+    config.model.geometry_encoder_id = ft_config.geometry_encoder_id
+    config.model.geometry_align_loss_coeff = ft_config.geometry_align_loss_coeff
+    config.model.geometry_align_site = ft_config.geometry_align_site
+    config.model.geometry_align_position_embedding_std = (
+        ft_config.geometry_align_position_embedding_std
+    )
+    config.model.geometry_mix_tokens_as = ft_config.geometry_mix_tokens_as
     config.model.random_rotation_angle = ft_config.random_rotation_angle
     config.model.color_jitter_params = ft_config.color_jitter_params
     config.model.use_percentiles = ft_config.use_percentiles
