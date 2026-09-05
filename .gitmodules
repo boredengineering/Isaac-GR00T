@@ -10,3 +10,9 @@
 [submodule "external_dependencies/robocasa"]
 	path = external_dependencies/robocasa
 	url = https://github.com/squarefk/robocasa
+[submodule "external_dependencies/depth-anything-3"]
+	path = external_dependencies/depth-anything-3
+	url = https://github.com/ByteDance-Seed/depth-anything-3
+[submodule "external_dependencies/GR00T-WholeBodyControl"]
+	path = external_dependencies/GR00T-WholeBodyControl
+	url = https://github.com/NVlabs/GR00T-WholeBodyControl.git
