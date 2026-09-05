@@ -295,6 +295,11 @@ class FrozenGeometryEncoder(nn.Module):
         **not** be applied: it targets the original ``torch.load`` research checkpoints and on this
         file it produces a doubled ``model.model.`` prefix that silently matches nothing.
 
+        The load is strict about the backbone and tolerant of the prediction head, which is
+        discarded: ``DA3-BASE`` ships without six ``head.scratch.output_conv2_aux.*`` tensors that
+        its own spec declares, so a whole-net strict load would reject an any-view teacher whose
+        backbone is complete.
+
         Args:
             dtype: Dtype to run the encoder in.
 
@@ -314,7 +319,27 @@ class FrozenGeometryEncoder(nn.Module):
             spec = json.load(handle)["config"]
         net = create_object(OmegaConf.create(spec))
         weights = load_file(os.path.join(root, "model.safetensors"))
-        net.load_state_dict({k.removeprefix("model."): v for k, v in weights.items()}, strict=True)
+        report = net.load_state_dict(
+            {k.removeprefix("model."): v for k, v in weights.items()}, strict=False
+        )
+        # Strictness is asserted on the backbone rather than on the whole net, because only the
+        # backbone is returned. `DA3-BASE`'s release omits six `head.scratch.output_conv2_aux.*`
+        # tensors that its own config.json declares, and `strict=True` therefore rejects a
+        # checkpoint whose backbone is complete over weights discarded on the next line. A missing
+        # or renamed *backbone* tensor is the failure that matters -- that is the silently
+        # untrained teacher the prefix bug produced -- so it stays fatal.
+        unexpected = sorted(report.unexpected_keys)
+        assert not unexpected, (
+            f"{root} carries {len(unexpected)} tensors the construction spec does not declare, e.g."
+            f" {unexpected[:3]}. The checkpoint and its config.json disagree, so the teacher would"
+            " be partly untrained."
+        )
+        stray = sorted(key for key in report.missing_keys if not key.startswith("head."))
+        assert not stray, (
+            f"{root} is missing {len(stray)} tensors outside the discarded prediction head, e.g."
+            f" {stray[:3]}. Only head weights may be absent; a gap in the backbone is a silently"
+            " untrained teacher."
+        )
         return net.backbone.to(dtype)
 
     def _forward_da3(self, pixels: torch.Tensor) -> torch.Tensor:

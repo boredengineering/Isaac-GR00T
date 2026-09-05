@@ -80,6 +80,7 @@ def _identity_align_module(dim: int) -> GeometryConditioning:
 
 APACHE_LICENSED_GEOMETRY_ENCODERS = _geometry_conditioning.APACHE_LICENSED_GEOMETRY_ENCODERS
 DA3_CHECKPOINT = Path("/models/isaaclab_arena/DA3METRIC-LARGE")
+DA3_ANYVIEW_CHECKPOINT = Path("/models/isaaclab_arena/DA3-BASE")
 
 
 def test_encoder_refuses_an_unlisted_checkpoint():
@@ -133,6 +134,32 @@ def test_da3_teacher_emits_the_student_grid():
     assert features.shape == (1, TOKENS_PER_IMAGE, 1024)
     assert torch.isfinite(features).all()
     assert not any(p.requires_grad for p in encoder._model.parameters())
+
+
+@pytest.mark.skipif(
+    not (DA3_ANYVIEW_CHECKPOINT / "model.safetensors").is_file(),
+    reason=f"{DA3_ANYVIEW_CHECKPOINT} not fetched; see the plan's section 8.3",
+)
+def test_da3_anyview_teacher_loads_despite_an_incomplete_head():
+    """DA3-BASE loads even though its release omits head tensors its own spec declares.
+
+    Two regressions in one. The checkpoint is missing six
+    ``head.scratch.output_conv2_aux.*`` tensors, so a whole-net strict load rejected the any-view
+    teacher outright even though its backbone is complete and the head is discarded. And its width
+    is 1536, not the 768 a ViT-B suggests, because ``cat_token`` is true -- the same doubling that
+    made a hardcoded width table a trap.
+    """
+    pytest.importorskip("depth_anything_3")
+    encoder = FrozenGeometryEncoder(
+        GeometryConditioningConfig(mode="align", encoder_id=str(DA3_ANYVIEW_CHECKPOINT))
+    )
+    images = torch.randint(0, 256, (1, 3, 480, 640), dtype=torch.uint8)
+
+    features = encoder(images, grid=GRID)
+
+    assert encoder.feature_dim == 1536
+    assert features.shape == (1, TOKENS_PER_IMAGE, 1536)
+    assert torch.isfinite(features).all()
 
 
 def test_alignment_loss_is_bounded_and_differentiable():
