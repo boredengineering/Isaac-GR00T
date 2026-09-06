@@ -364,6 +364,35 @@ class FrozenGeometryEncoder(nn.Module):
         patches, _cls = layers[self.config.da3_out_layer]
         return patches[:, 0]
 
+    def state_dict(self, *args, destination=None, prefix="", keep_vars=False):  # type: ignore[override]
+        """Return the module's state without the frozen teacher's weights.
+
+        The teacher is a registered submodule so that dtype and device handling work during
+        training, which also means its parameters would be written into every policy checkpoint.
+        They are dead payload there: 1.3 GB for ``DA3METRIC-LARGE``, discarded on load because the
+        teacher is reconstructed from its own checkpoint at ``encoder_id``. Worse, they made
+        loading an ``align`` policy emit a several-hundred-tensor "weights not used" warning, which
+        is indistinguishable at a glance from a real architecture mismatch.
+
+        Nothing is lost by omitting them: ``_ensure_loaded`` rebuilds the teacher from
+        ``encoder_id`` on first use, and it is frozen, so a training run cannot have changed it.
+
+        Args:
+            destination: Mapping to write into, as ``nn.Module.state_dict``.
+            prefix: Key prefix, supplied by the parent module when recursing.
+            keep_vars: Whether to keep autograd history, as ``nn.Module.state_dict``.
+
+        Returns:
+            The state dict with ``_model.*`` entries removed.
+        """
+        state = super().state_dict(
+            *args, destination=destination, prefix=prefix, keep_vars=keep_vars
+        )
+        teacher_prefix = f"{prefix}_model."
+        for key in [key for key in state if key.startswith(teacher_prefix)]:
+            del state[key]
+        return state
+
     @property
     def feature_dim(self) -> int:
         """Channel width of the emitted geometry features, as measured by a forward pass."""

@@ -75,9 +75,49 @@ class Gr00tN1d7Pipeline(ModelPipeline):
         self.train_dataset, self.eval_dataset = self._create_dataset(self.save_cfg_dir)
         self.data_collator = self._create_collator()
 
+    def _resolve_geometry_feature_dim(self) -> int | None:
+        """Measure the geometry teacher's feature width before the policy is constructed.
+
+        The width has to be measured rather than tabulated, and measuring means a forward pass --
+        but ``AutoModel.from_pretrained`` constructs the policy under transformers' meta-device
+        init, where a forward pass cannot run ("Cannot copy out of meta tensor"). So the probe
+        happens here, on a real device, and the answer is carried in on the config.
+
+        Returns:
+            The teacher's feature width, or None when geometry conditioning is off.
+        """
+        if self.model_config.geometry_mode == "off":
+            return None
+        recorded = getattr(self.model_config, "geometry_feature_dim", None)
+        if recorded is not None:
+            return recorded
+
+        from gr00t.model.modules.geometry_conditioning import (
+            FrozenGeometryEncoder,
+            GeometryConditioningConfig,
+        )
+
+        # Built with the same defaults the policy would use, so the measured width matches the
+        # teacher the policy actually loads. Discarded immediately; only the integer is kept.
+        encoder = FrozenGeometryEncoder(
+            GeometryConditioningConfig(
+                mode=self.model_config.geometry_mode,
+                encoder_id=self.model_config.geometry_encoder_id,
+            )
+        )
+        width = encoder.probe_feature_dim()
+        logging.info(
+            "Measured geometry teacher feature width: %d (%s)",
+            width,
+            self.model_config.geometry_encoder_id,
+        )
+        self.model_config.geometry_feature_dim = width
+        return width
+
     def _create_model(self):
         """Setup model with proper vocabulary expansion."""
         skip_weight_loading = getattr(self.config.training, "skip_weight_loading", False)
+        geometry_feature_dim = self._resolve_geometry_feature_dim()
         if self.config.training.start_from_checkpoint is not None and not skip_weight_loading:
             model, loading_info = AutoModel.from_pretrained(
                 self.config.training.start_from_checkpoint,
@@ -95,6 +135,7 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                     self.config.model.geometry_align_position_embedding_std
                 ),
                 geometry_mix_tokens_as=self.config.model.geometry_mix_tokens_as,
+                geometry_feature_dim=geometry_feature_dim,
                 backbone_trainable_params_fp32=self.config.model.backbone_trainable_params_fp32,
                 load_bf16=self.config.model.load_bf16,
                 transformers_loading_kwargs=self.transformers_loading_kwargs,

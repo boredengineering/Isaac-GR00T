@@ -284,6 +284,21 @@ class Gr00tTrainer(Trainer):
         self.loss = loss
 
         # --------------------------------------------------------------
+        # Geometry alignment loss
+        # --------------------------------------------------------------
+        # Surfaced separately because it is *added into* the reported loss, so a Spatial Forcing
+        # run that contributes nothing is indistinguishable from one that works if only the total
+        # is logged. That failure is a live risk here rather than a hypothetical: the target
+        # positional embedding starts at 2.8% of the teacher's own feature scale, so the term can
+        # sit near-constant while the action loss falls and the run still looks healthy.
+        align_loss = outputs.get("align_loss") if hasattr(outputs, "get") else None
+        if align_loss is not None and self.state.global_step % self.args.logging_steps == 0:
+            align_tensor = align_loss.detach().to(loss.device).reshape(())
+            align_mean = self._nested_gather(align_tensor).mean().item()
+            if self.args.local_rank in (-1, 0):
+                self.log({"align_loss": align_mean})
+
+        # --------------------------------------------------------------
         # Accuracy calculation
         # --------------------------------------------------------------
         if (

@@ -581,7 +581,20 @@ class Gr00tN1d7(PreTrainedModel):
             # projector must still be built for strict weight loading.
             geometry_dim = getattr(config, "geometry_feature_dim", None)
             if geometry_dim is None:
-                geometry_dim = self.geometry_encoder.probe_feature_dim()
+                try:
+                    geometry_dim = self.geometry_encoder.probe_feature_dim()
+                except NotImplementedError as error:
+                    # Probing is a forward pass, and ``from_pretrained`` builds the policy under
+                    # transformers' meta-device init, where a forward cannot run. Callers that go
+                    # through ``setup.py`` never land here because it measures the width first;
+                    # this turns the meta-tensor error into the instruction to do the same.
+                    raise RuntimeError(
+                        "Could not measure the geometry teacher's feature width while"
+                        " constructing the policy, because the policy is being built on the meta"
+                        " device. Measure it before construction and pass it in as"
+                        " geometry_feature_dim (see"
+                        " Gr00tN1d7FinetunePipeline._resolve_geometry_feature_dim)."
+                    ) from error
                 config.geometry_feature_dim = geometry_dim
             self.geometry_conditioning = GeometryConditioning(
                 geometry_config,

@@ -473,3 +473,29 @@ def test_conditioning_sizes_from_a_recorded_width_without_an_encoder():
 
     assert loss.ndim == 0
     assert torch.isfinite(loss)
+
+
+def test_state_dict_omits_the_frozen_teacher():
+    """The teacher's weights must not ride along in the policy's checkpoint.
+
+    It is registered as a submodule for device and dtype handling, but it is frozen and rebuilt
+    from ``encoder_id`` on load, so saving it only adds dead payload -- 1.3 GB for
+    ``DA3METRIC-LARGE`` -- and makes loading emit a large, alarming "weights not used" warning.
+    """
+    encoder = FrozenGeometryEncoder(GeometryConditioningConfig(mode="align"))
+    encoder(torch.randint(0, 256, (1, 3, 64, 64), dtype=torch.uint8), grid=(1, 1))
+
+    assert encoder._model is not None, "the teacher must be loaded, or this proves nothing"
+    assert not [key for key in encoder.state_dict() if key.startswith("_model.")]
+
+
+def test_state_dict_omits_the_teacher_under_a_parent_prefix():
+    """The exclusion must survive recursion from a parent module, which supplies a key prefix."""
+    encoder = FrozenGeometryEncoder(GeometryConditioningConfig(mode="align"))
+    encoder(torch.randint(0, 256, (1, 3, 64, 64), dtype=torch.uint8), grid=(1, 1))
+    parent = torch.nn.Module()
+    parent.geometry_encoder = encoder
+
+    keys = parent.state_dict().keys()
+
+    assert not [key for key in keys if key.startswith("geometry_encoder._model.")]
