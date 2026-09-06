@@ -134,8 +134,10 @@ class Gr00tN1d7Config(PretrainedConfig):
     geometry_align_loss_coeff: float = 0.5
     """Weight on the alignment loss when ``geometry_mode`` is ``align``.
 
-    **Not a published value.** Spatial Forcing never states its weight factor, so this default is a
-    guess kept only so a run starts. Sweep it rather than citing it.
+    Upstream's own default: ``openvla-SF/vla-scripts/finetune_align.py`` sets
+    ``align_loss_coeff = 0.5``. The paper ablates it as ``alpha`` (Table 3) without printing the
+    value. Sweep it anyway -- it was tuned against OpenVLA's L1 action loss, not N1.7's
+    flow-matching head.
     """
 
     geometry_align_position_embedding_std: float = 0.02
@@ -163,6 +165,20 @@ class Gr00tN1d7Config(PretrainedConfig):
 
     geometry_mix_tokens_as: str = "image"
     """Cross-attention branch the fused tokens join when ``geometry_mode`` is ``mix``."""
+
+    geometry_feature_dim: int | None = None
+    """Measured channel width of the geometry teacher's features, recorded at training time.
+
+    Sizing the alignment projector needs this width, and it is *measured* rather than tabulated
+    because VGGT's aggregated tokens are twice its configured width. Measuring it means one forward
+    pass through the teacher, which means loading the teacher.
+
+    Persisting it here is what keeps ``align`` free at inference. ``align`` needs nothing from the
+    teacher once trained, but the projector still has to be constructed to satisfy strict weight
+    loading -- so without a recorded width, deserialising an ``align`` checkpoint would load a
+    ViT-L purely to re-measure a number the training run already knew. Left at None it is probed
+    once and written back, so a checkpoint saved by this code carries it.
+    """
 
     max_num_embodiments: int = 32
 

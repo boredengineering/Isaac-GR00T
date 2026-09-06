@@ -98,10 +98,12 @@ class GeometryConditioningConfig:
     align_loss_coeff: float = 0.5
     """Weight on the alignment loss in ``align`` mode.
 
-    **Unknown upstream.** Spatial Forcing never states a number: its Appendix A is titled "Weight
-    Factor" but the value is not recoverable from the published HTML, and it is absent from the
-    reference implementation's committed configs. This default is a guess kept only so a run starts,
-    and it must be swept rather than reported as the paper's value.
+    Matches the reference implementation: ``openvla-SF/vla-scripts/finetune_align.py`` defines
+    ``align_loss_coeff: float = 0.5``. The paper calls it ``alpha`` and ablates it in Table 3
+    without printing the chosen value, so the code is the only source -- and it agrees with this
+    default. Still worth sweeping, because upstream's 0.5 was tuned against an L1 action loss on
+    OpenVLA, not N1.7's flow-matching head. Do **not** conflate with VEGA's ``lambda = 0.1``
+    (arXiv:2605.10485), which is a different method.
     """
 
     align_max_tokens: int = 4096

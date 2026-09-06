@@ -572,10 +572,21 @@ class Gr00tN1d7(PreTrainedModel):
             # Measured with one probe forward rather than read from a per-encoder table: VGGT's
             # aggregated tokens are twice its configured width, so any table is a trap for the next
             # encoder that does something similar.
+            #
+            # The measurement is cached on the config because probing loads the teacher, and
+            # ``align`` is supposed to cost nothing at inference. ``FrozenGeometryEncoder`` loads
+            # lazily on its first forward, and ``get_action`` never calls it in ``align`` mode -- so
+            # once the width is known from the checkpoint, an ``align`` policy never materialises
+            # the teacher at all. Probing here unconditionally would defeat that, since the
+            # projector must still be built for strict weight loading.
+            geometry_dim = getattr(config, "geometry_feature_dim", None)
+            if geometry_dim is None:
+                geometry_dim = self.geometry_encoder.probe_feature_dim()
+                config.geometry_feature_dim = geometry_dim
             self.geometry_conditioning = GeometryConditioning(
                 geometry_config,
                 backbone_dim=config.backbone_embedding_dim,
-                geometry_dim=self.geometry_encoder.probe_feature_dim(),
+                geometry_dim=geometry_dim,
             )
             if config.geometry_mode == "align":
                 layer = self._align_backbone_layer()

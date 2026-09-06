@@ -72,8 +72,10 @@ class FinetuneConfig:
     geometry_align_loss_coeff: float = 0.5
     """Weight on the alignment loss when ``geometry_mode`` is ``align``.
 
-    **Not a published value.** Spatial Forcing never states its weight factor, so this default is a
-    guess kept only so a run starts. Sweep it rather than citing it.
+    Upstream's own default: ``openvla-SF/vla-scripts/finetune_align.py`` sets
+    ``align_loss_coeff = 0.5``. The paper ablates it as ``alpha`` (Table 3) without printing the
+    value. Sweep it anyway -- it was tuned against OpenVLA's L1 action loss, not N1.7's
+    flow-matching head.
     """
 
     geometry_align_position_embedding_std: float = 0.02

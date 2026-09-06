@@ -436,3 +436,40 @@ def test_token_grid_rejects_mixed_resolutions():
     """Geometry features resample to a single grid, so a mixed batch must raise."""
     with pytest.raises(AssertionError, match="different patch grids"):
         token_grid_from_image_grid_thw([[1, 16, 22], [1, 16, 16]], spatial_merge_size=2)
+
+
+def test_encoder_does_not_load_the_teacher_until_it_is_used():
+    """Constructing the encoder must load nothing, which is what keeps ``align`` free at inference.
+
+    ``align`` needs no geometry features at inference, but the projector is still constructed so
+    that strict weight loading succeeds. That only stays free if merely building the encoder does
+    not pull the checkpoint into memory.
+    """
+    encoder = FrozenGeometryEncoder(GeometryConditioningConfig(mode="align"))
+
+    assert encoder._model is None
+
+    encoder(torch.randint(0, 256, (1, 3, 64, 64), dtype=torch.uint8), grid=(1, 1))
+
+    assert encoder._model is not None
+
+
+def test_conditioning_sizes_from_a_recorded_width_without_an_encoder():
+    """A recorded teacher width is enough to build the projector, so no probe forward is needed.
+
+    ``Gr00tN1d7`` persists the measured width as ``geometry_feature_dim`` for exactly this reason:
+    deserialising an ``align`` checkpoint must not load a ViT-L just to re-measure a number the
+    training run already knew.
+    """
+    conditioning = GeometryConditioning(
+        GeometryConditioningConfig(mode="align"),
+        backbone_dim=BACKBONE_DIM,
+        geometry_dim=GEOMETRY_DIM,
+    )
+
+    tokens = torch.randn(2, TOKENS_PER_IMAGE, BACKBONE_DIM)
+    target = torch.randn(2, TOKENS_PER_IMAGE, GEOMETRY_DIM)
+    loss = conditioning.alignment_loss(tokens, target)
+
+    assert loss.ndim == 0
+    assert torch.isfinite(loss)
